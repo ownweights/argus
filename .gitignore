@@ -18,3 +18,5 @@ __pycache__/
 .mypy_cache/
 
 /argus/static/
+
+docs/superpowers/
