@@ -54,7 +54,7 @@ export interface Run {
   id: string;
   url: string;
   instructions: string;
-  provider: ProviderID;
+  provider?: ProviderID;
   status: RunStatusValue;
   created_at: string;
   updated_at: string;

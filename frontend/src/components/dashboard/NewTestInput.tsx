@@ -1,8 +1,9 @@
-import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { ArrowUp, Globe } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
-import type { CreateRunRequest, Run } from "../../types";
+import { providerCatalog, providerLabel, selectedProvider } from "../../lib/providers";
+import type { CreateRunRequest, ProviderID, ProviderInfo, Run, Settings } from "../../types";
 
 const suggestions = [
   "Check that navigation links work across all pages",
@@ -22,10 +23,25 @@ export function NewTestInput() {
   const [allowMutations, setAllowMutations] = useState(false);
   const [allowDestructive, setAllowDestructive] = useState(false);
   const [allowedOrigins, setAllowedOrigins] = useState("");
+  const [providers, setProviders] = useState<ProviderInfo[]>(() => providerCatalog());
+  const [provider, setProvider] = useState<ProviderID>("gemini");
+  const activeProvider = selectedProvider(provider, providers);
+
+  useEffect(() => {
+    void api<Settings>("/api/settings").then((settings) => {
+      const catalog = providerCatalog(settings.providers);
+      setProviders(catalog);
+      setProvider((current) => selectedProvider(current, catalog) ?? current);
+    }).catch(() => undefined);
+  }, []);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     if (!instructions.trim() || !url.trim() || submitting) return;
+    if (!activeProvider) {
+      setError("Configure a provider API key before starting a test");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
@@ -33,6 +49,7 @@ export function NewTestInput() {
       const request: CreateRunRequest = {
         url: url.trim(),
         instructions: instructions.trim(),
+        provider: activeProvider,
         authorization: allowMutations || origins.length > 0 ? {
           allow_mutations: allowMutations,
           allow_destructive: allowMutations && allowDestructive,
@@ -73,6 +90,11 @@ export function NewTestInput() {
     <div className="url-field">
       <Globe size={13} />
       <input type="url" required value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com" aria-label="Target URL" />
+      <label className="provider-select">Provider
+        <select value={provider} onChange={(event) => setProvider(event.target.value as ProviderID)} aria-label="AI provider">
+          {providers.map((item) => <option key={item.id} value={item.id} disabled={!item.available}>{providerLabel(item.id)}{item.available ? "" : " — API key required"}</option>)}
+        </select>
+      </label>
     </div>
     <details className="run-policy">
       <summary>Run policy <span>{allowMutations ? "Mutations authorized" : "Read-only"}</span></summary>
@@ -112,7 +134,7 @@ export function NewTestInput() {
     <div className="composer-toolbar">
       <span><Globe size={13} />Target URL</span>
       <span className="key-hint">Enter to run · Shift + Enter for a new line</span>
-      <button type="submit" className="send-button" disabled={!instructions.trim() || !url.trim() || submitting} title="Start test">
+      <button type="submit" className="send-button" disabled={!instructions.trim() || !url.trim() || !activeProvider || submitting} title="Start test">
         <ArrowUp size={15} />
       </button>
     </div>

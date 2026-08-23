@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --test src/lib/mcpConfig.test.mjs",
+    "test": "node --test src/lib/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc -b && vite build",
     "lint": "eslint src --max-warnings=0"

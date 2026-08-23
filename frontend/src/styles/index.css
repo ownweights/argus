@@ -80,6 +80,8 @@ a { color: inherit; }
 .composer textarea::placeholder, .composer input::placeholder { color: var(--text-tertiary); }
 .url-field { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); padding: 7px 12px; color: var(--text-tertiary); }
 .url-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text-primary); font: 12px 'Google Sans Mono', monospace; }
+.provider-select { display: flex; align-items: center; gap: 5px; color: var(--text-tertiary); font-size: 11px; white-space: nowrap; }
+.provider-select select { border: 1px solid var(--border-color); border-radius: 5px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; padding: 3px 5px; }
 .run-policy { margin: 0 12px 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); }
 .run-policy summary { display: flex; cursor: pointer; align-items: center; justify-content: space-between; padding: 8px 12px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
 .run-policy summary span { color: var(--text-tertiary); font-weight: 500; }
