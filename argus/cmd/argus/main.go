@@ -84,7 +84,13 @@ func serverAddressFromEnv() string {
 }
 
 func runnerOptionsFromEnv(screenshotDir string) runner.Options {
-	return runner.Options{ScreenshotDir: screenshotDir, Model: os.Getenv("GEMINI_MODEL")}
+	return runner.Options{
+		ScreenshotDir: screenshotDir,
+		Model:         os.Getenv("GEMINI_MODEL"),
+		GPTModel:      os.Getenv("OPENAI_MODEL"),
+		KimiModel:     os.Getenv("KIMI_MODEL"),
+		KimiBaseURL:   os.Getenv("KIMI_BASE_URL"),
+	}
 }
 
 func optionsFromEnv(screenshotDir ...string) server.Options {
@@ -97,9 +103,12 @@ func optionsFromEnv(screenshotDir ...string) server.Options {
 		shots = screenshotDir[0]
 	}
 	return server.Options{
-		StaticDir:     staticDir,
-		ScreenshotDir: shots,
-		Model:         os.Getenv("GEMINI_MODEL"),
+		StaticDir:        staticDir,
+		ScreenshotDir:    shots,
+		Model:            os.Getenv("GEMINI_MODEL"),
+		GeminiConfigured: os.Getenv("GEMINI_API_KEY") != "",
+		OpenAIConfigured: os.Getenv("OPENAI_API_KEY") != "",
+		KimiConfigured:   os.Getenv("KIMI_API_KEY") != "",
 	}
 }
 

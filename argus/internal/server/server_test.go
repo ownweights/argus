@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -338,5 +339,75 @@ func TestCreateRequestAuthorizationDefaultsReadOnly(t *testing.T) {
 	}
 	if got.Authorization != nil {
 		t.Fatalf("authorization = %#v", got.Authorization)
+	}
+}
+
+func TestCreateRunProviderSelectionAndSettingsCatalog(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "argus.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	runner := &fakeRunner{started: make(chan startedRun, 10), cancelled: make(chan string, 10)}
+	server, err := New(db, runner, Options{GeminiConfigured: true, OpenAIConfigured: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	var gptRunID string
+	for _, test := range []struct {
+		payload string
+		want    domain.ProviderID
+	}{
+		{`{"url":"https://example.com","instructions":"check"}`, domain.ProviderGemini},
+		{`{"url":"https://example.com","instructions":"check","provider":"gpt"}`, domain.ProviderGPT},
+	} {
+		response := request(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/runs", test.payload)
+		if response.StatusCode != http.StatusCreated {
+			t.Fatalf("create %s = %d", test.payload, response.StatusCode)
+		}
+		var run domain.Run
+		decode(t, response, &run)
+		if run.Provider != test.want {
+			t.Fatalf("provider = %q, want %q", run.Provider, test.want)
+		}
+		if test.want == domain.ProviderGPT {
+			gptRunID = run.ID
+		}
+	}
+	response := request(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/runs/"+gptRunID, "")
+	var persisted domain.Run
+	decode(t, response, &persisted)
+	if persisted.Provider != domain.ProviderGPT {
+		t.Fatalf("persisted provider = %q", persisted.Provider)
+	}
+	for _, value := range []string{"kimi", "unknown"} {
+		response := request(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/runs", `{"url":"https://example.com","instructions":"check","provider":"`+value+`"}`)
+		if response.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("provider %q status = %d", value, response.StatusCode)
+		}
+		var validation validationResponse
+		decode(t, response, &validation)
+		if len(validation.Detail) != 1 || !sameLoc(validation.Detail[0].Loc, []any{"body", "provider"}) {
+			t.Fatalf("provider %q validation = %#v", value, validation)
+		}
+	}
+	runs, err := db.ListRuns(100)
+	if err != nil || len(runs) != 2 {
+		t.Fatalf("runs after rejected providers = %#v, %v", runs, err)
+	}
+
+	response = request(t, httpServer.Client(), http.MethodGet, httpServer.URL+"/api/settings", "")
+	var settings domain.SettingsResponse
+	decode(t, response, &settings)
+	want := []domain.ProviderInfo{
+		{ID: domain.ProviderGemini, Available: true, Default: true},
+		{ID: domain.ProviderGPT, Available: true},
+		{ID: domain.ProviderKimi, Available: false},
+	}
+	if !reflect.DeepEqual(settings.Providers, want) {
+		t.Fatalf("providers = %#v, want %#v", settings.Providers, want)
 	}
 }

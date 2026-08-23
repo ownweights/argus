@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY, url TEXT NOT NULL, instructions TEXT NOT NULL,
     status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
     report_json TEXT, error TEXT,
+    provider TEXT NOT NULL DEFAULT 'gemini',
     allow_mutations INTEGER NOT NULL DEFAULT 0,
     allow_destructive INTEGER NOT NULL DEFAULT 0,
     allowed_origins_json TEXT NOT NULL DEFAULT '[]'
@@ -64,6 +66,7 @@ CREATE TABLE IF NOT EXISTS screenshots (
 		column    string
 		statement string
 	}{
+		{"provider", `ALTER TABLE runs ADD COLUMN provider TEXT NOT NULL DEFAULT 'gemini'`},
 		{"allow_mutations", `ALTER TABLE runs ADD COLUMN allow_mutations INTEGER NOT NULL DEFAULT 0`},
 		{"allow_destructive", `ALTER TABLE runs ADD COLUMN allow_destructive INTEGER NOT NULL DEFAULT 0`},
 		{"allowed_origins_json", `ALTER TABLE runs ADD COLUMN allowed_origins_json TEXT NOT NULL DEFAULT '[]'`},
@@ -107,6 +110,13 @@ func (s *Store) hasRunColumn(name string) (bool, error) {
 }
 
 func (s *Store) CreateRun(url, instructions string, policy domain.RunPolicy) (*domain.Run, error) {
+	return s.CreateRunWithProvider(url, instructions, domain.ProviderGemini, policy)
+}
+
+func (s *Store) CreateRunWithProvider(url, instructions string, provider domain.ProviderID, policy domain.RunPolicy) (*domain.Run, error) {
+	if !domain.ValidProvider(provider) {
+		return nil, errors.New("invalid provider")
+	}
 	id, err := newID()
 	if err != nil {
 		return nil, err
@@ -120,16 +130,16 @@ func (s *Store) CreateRun(url, instructions string, policy domain.RunPolicy) (*d
 		return nil, err
 	}
 	if _, err := s.db.Exec(`INSERT INTO runs (
-id, url, instructions, status, created_at, updated_at, report_json, error,
+id, url, instructions, provider, status, created_at, updated_at, report_json, error,
 allow_mutations, allow_destructive, allowed_origins_json
-) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)`, id, url, instructions, domain.RunStatusQueued, now, now, policy.AllowMutations, policy.AllowDestructive, string(encodedOrigins)); err != nil {
+) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)`, id, url, instructions, provider, domain.RunStatusQueued, now, now, policy.AllowMutations, policy.AllowDestructive, string(encodedOrigins)); err != nil {
 		return nil, err
 	}
 	return s.GetRun(id, false)
 }
 
 func (s *Store) ListRuns(limit int) ([]domain.Run, error) {
-	rows, err := s.db.Query(`SELECT id, url, instructions, status, created_at, updated_at,
+	rows, err := s.db.Query(`SELECT id, url, instructions, provider, status, created_at, updated_at,
 report_json, error, allow_mutations, allow_destructive, allowed_origins_json
 FROM runs ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
@@ -148,7 +158,7 @@ FROM runs ORDER BY created_at DESC LIMIT ?`, limit)
 }
 
 func (s *Store) GetRun(id string, includeEvents bool) (*domain.Run, error) {
-	run, err := scanRun(s.db.QueryRow(`SELECT id, url, instructions, status, created_at, updated_at,
+	run, err := scanRun(s.db.QueryRow(`SELECT id, url, instructions, provider, status, created_at, updated_at,
 report_json, error, allow_mutations, allow_destructive, allowed_origins_json
 FROM runs WHERE id = ?`, id))
 	if err == sql.ErrNoRows {
@@ -286,7 +296,7 @@ func scanRun(row rowScanner) (*domain.Run, error) {
 	var allowMutations bool
 	var allowDestructive bool
 	var allowedOrigins string
-	if err := row.Scan(&run.ID, &run.URL, &run.Instructions, &run.Status, &run.CreatedAt, &run.UpdatedAt, &report, &runError, &allowMutations, &allowDestructive, &allowedOrigins); err != nil {
+	if err := row.Scan(&run.ID, &run.URL, &run.Instructions, &run.Provider, &run.Status, &run.CreatedAt, &run.UpdatedAt, &report, &runError, &allowMutations, &allowDestructive, &allowedOrigins); err != nil {
 		return nil, err
 	}
 	policy := domain.RunPolicy{AllowMutations: allowMutations, AllowDestructive: allowDestructive, AllowedOrigins: []string{}}

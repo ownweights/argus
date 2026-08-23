@@ -24,13 +24,21 @@ func TestFindStaticDirWalksFromProvidedDirectory(t *testing.T) {
 	}
 }
 
-func TestOptionsReadGeminiModel(t *testing.T) {
+func TestOptionsReadProviderConfiguration(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "gemini-key")
 	t.Setenv("GEMINI_MODEL", "gemini-test")
-	if optionsFromEnv().Model != "gemini-test" {
-		t.Fatalf("server model = %q", optionsFromEnv().Model)
+	t.Setenv("OPENAI_API_KEY", "openai-key")
+	t.Setenv("OPENAI_MODEL", "gpt-test")
+	t.Setenv("KIMI_API_KEY", "kimi-key")
+	t.Setenv("KIMI_MODEL", "kimi-test")
+	t.Setenv("KIMI_BASE_URL", "https://kimi.example/v1")
+	serverOptions := optionsFromEnv()
+	if serverOptions.Model != "gemini-test" || !serverOptions.GeminiConfigured || !serverOptions.OpenAIConfigured || !serverOptions.KimiConfigured {
+		t.Fatalf("server options = %#v", serverOptions)
 	}
-	if runnerOptionsFromEnv("screenshots").Model != "gemini-test" {
-		t.Fatalf("runner model = %q", runnerOptionsFromEnv("screenshots").Model)
+	runnerOptions := runnerOptionsFromEnv("screenshots")
+	if runnerOptions.Model != "gemini-test" || runnerOptions.GPTModel != "gpt-test" || runnerOptions.KimiModel != "kimi-test" || runnerOptions.KimiBaseURL != "https://kimi.example/v1" {
+		t.Fatalf("runner options = %#v", runnerOptions)
 	}
 }
 

@@ -18,7 +18,8 @@ func TestStoreMigratesLegacyRunsAndPersistsOnlyRunPolicy(t *testing.T) {
 	_, err = legacy.Exec(`CREATE TABLE runs (
 id TEXT PRIMARY KEY, url TEXT NOT NULL, instructions TEXT NOT NULL,
 status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-report_json TEXT, error TEXT)`)
+report_json TEXT, error TEXT);
+INSERT INTO runs VALUES ('legacy', 'https://example.com', 'test', 'queued', '2025-01-01T00:00:00+00:00', '2025-01-01T00:00:00+00:00', NULL, NULL)`)
 	if closeErr := legacy.Close(); err == nil {
 		err = closeErr
 	}
@@ -34,7 +35,11 @@ report_json TEXT, error TEXT)`)
 	if err := runStore.Initialize(); err != nil {
 		t.Fatal(err)
 	}
-	run, err := runStore.CreateRun("https://example.com", "test", domain.RunPolicy{
+	legacyRun, err := runStore.GetRun("legacy", false)
+	if err != nil || legacyRun == nil || legacyRun.Provider != domain.ProviderGemini {
+		t.Fatalf("legacy run = %#v, %v", legacyRun, err)
+	}
+	run, err := runStore.CreateRunWithProvider("https://example.com", "test", domain.ProviderGPT, domain.RunPolicy{
 		AllowMutations:   true,
 		AllowDestructive: true,
 		AllowedOrigins:   []string{"https://accounts.example.com"},
@@ -42,8 +47,8 @@ report_json TEXT, error TEXT)`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Policy == nil || !run.Policy.AllowMutations || !run.Policy.AllowDestructive || len(run.Policy.AllowedOrigins) != 1 {
-		t.Fatalf("run policy = %#v", run.Policy)
+	if run.Provider != domain.ProviderGPT || run.Policy == nil || !run.Policy.AllowMutations || !run.Policy.AllowDestructive || len(run.Policy.AllowedOrigins) != 1 {
+		t.Fatalf("run = %#v", run)
 	}
 }
 

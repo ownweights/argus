@@ -14,20 +14,35 @@ import (
 	"github.com/ace-foundry/argus-testing/argus/internal/browser"
 	"github.com/ace-foundry/argus-testing/argus/internal/domain"
 	"github.com/ace-foundry/argus-testing/argus/internal/gemini"
+	"github.com/ace-foundry/argus-testing/argus/internal/openai"
 	"github.com/ace-foundry/argus-testing/argus/internal/policy"
 	"github.com/ace-foundry/argus-testing/argus/internal/store"
 )
 
-const missingAPIKey = "GEMINI_API_KEY is not configured"
+const (
+	missingAPIKey    = "GEMINI_API_KEY is not configured"
+	missingOpenAIKey = "OPENAI_API_KEY is not configured"
+	missingKimiKey   = "KIMI_API_KEY is not configured"
+	defaultGPTModel  = "gpt-4o"
+	defaultKimiModel = "moonshot-v1-8k-vision-preview"
+	defaultKimiURL   = "https://api.moonshot.ai/v1"
+)
 
 type Publisher func(domain.RunEvent)
 
 type Options struct {
 	ScreenshotDir string
 	Timeout       time.Duration
-	Model         string
-	APIKey        string
-	Provider      agent.Provider // Provider makes deterministic tests possible without Gemini.
+	Model         string // Gemini model, retained for compatibility.
+	APIKey        string // Gemini API key, retained for compatibility.
+	GPTModel      string
+	GPTAPIKey     string
+	KimiModel     string
+	KimiAPIKey    string
+	KimiBaseURL   string
+	Provider      agent.Provider // Provider makes deterministic Gemini tests possible.
+	GPTProvider   agent.Provider
+	KimiProvider  agent.Provider
 	Grounder      Grounder
 }
 
@@ -37,9 +52,11 @@ type Runner struct {
 	screenshotDir string
 	timeout       time.Duration
 	model         agent.ModelRef
+	models        map[domain.ProviderID]agent.ModelRef
 	runtime       *agent.Runtime
 	grounder      Grounder
-	configured    bool
+	grounders     map[domain.ProviderID]Grounder
+	configured    map[domain.ProviderID]bool
 	publish       Publisher
 }
 
@@ -53,26 +70,94 @@ func New(runStore *store.Store, factory browser.Factory, options Options) *Runne
 	if options.Model == "" {
 		options.Model = "gemini-2.5-flash"
 	}
+	if options.GPTModel == "" {
+		options.GPTModel = defaultGPTModel
+	}
+	if options.KimiModel == "" {
+		options.KimiModel = defaultKimiModel
+	}
+	if options.KimiBaseURL == "" {
+		options.KimiBaseURL = defaultKimiURL
+	}
 	if options.APIKey == "" {
 		options.APIKey = os.Getenv("GEMINI_API_KEY")
 	}
-	provider := options.Provider
-	if provider == nil && options.APIKey != "" {
-		provider = gemini.New(options.APIKey)
+	if options.GPTAPIKey == "" {
+		options.GPTAPIKey = os.Getenv("OPENAI_API_KEY")
+	}
+	if options.KimiAPIKey == "" {
+		options.KimiAPIKey = os.Getenv("KIMI_API_KEY")
+	}
+	if baseURL := os.Getenv("KIMI_BASE_URL"); options.KimiBaseURL == defaultKimiURL && baseURL != "" {
+		options.KimiBaseURL = baseURL
+	}
+
+	geminiProvider := options.Provider
+	if geminiProvider == nil && options.APIKey != "" {
+		geminiProvider = gemini.New(options.APIKey)
+	}
+	gptProvider := options.GPTProvider
+	if gptProvider == nil && options.GPTAPIKey != "" {
+		gptProvider = openai.New(options.GPTAPIKey)
+	}
+	kimiProvider := options.KimiProvider
+	if kimiProvider == nil && options.KimiAPIKey != "" {
+		kimiProvider = openai.New(options.KimiAPIKey, openai.WithBaseURL(options.KimiBaseURL))
+	}
+	providers := map[string]agent.Provider{}
+	configured := map[domain.ProviderID]bool{}
+	for _, provider := range []struct {
+		id       domain.ProviderID
+		provider agent.Provider
+	}{{domain.ProviderGemini, geminiProvider}, {domain.ProviderGPT, gptProvider}, {domain.ProviderKimi, kimiProvider}} {
+		if provider.provider != nil {
+			providers[string(provider.id)] = provider.provider
+			configured[provider.id] = true
+		}
 	}
 	grounder := options.Grounder
 	if grounder == nil {
-		if direct, ok := provider.(Grounder); ok {
+		if direct, ok := geminiProvider.(Grounder); ok {
 			grounder = direct
-		} else if geminiProvider, ok := provider.(*gemini.Provider); ok {
-			grounder = geminiGrounder{provider: geminiProvider, model: options.Model}
+		} else if provider, ok := geminiProvider.(*gemini.Provider); ok {
+			grounder = geminiGrounder{provider: provider, model: options.Model}
 		}
 	}
-	var runtime *agent.Runtime
-	if provider != nil {
-		runtime = agent.NewRuntime(map[string]agent.Provider{"gemini": provider}, agent.NewInMemorySessionStore(), agent.WithMaxModelCalls(32))
+	grounders := map[domain.ProviderID]Grounder{}
+	if grounder != nil {
+		grounders[domain.ProviderGemini] = grounder
 	}
-	return &Runner{store: runStore, browser: factory, screenshotDir: options.ScreenshotDir, timeout: options.Timeout, model: agent.ModelRef{Provider: "gemini", Model: options.Model}, runtime: runtime, grounder: grounder, configured: provider != nil, publish: nil}
+	var runtime *agent.Runtime
+	if len(providers) > 0 {
+		runtime = agent.NewRuntime(providers, agent.NewInMemorySessionStore(), agent.WithMaxModelCalls(32))
+	}
+	return &Runner{
+		store: runStore, browser: factory, screenshotDir: options.ScreenshotDir, timeout: options.Timeout,
+		model: agent.ModelRef{Provider: string(domain.ProviderGemini), Model: options.Model},
+		models: map[domain.ProviderID]agent.ModelRef{
+			domain.ProviderGemini: {Provider: string(domain.ProviderGemini), Model: options.Model},
+			domain.ProviderGPT:    {Provider: string(domain.ProviderGPT), Model: options.GPTModel},
+			domain.ProviderKimi:   {Provider: string(domain.ProviderKimi), Model: options.KimiModel},
+		},
+		runtime: runtime, grounder: grounder, grounders: grounders, configured: configured,
+	}
+}
+
+func (r *Runner) configFor(provider domain.ProviderID) (agent.ModelRef, Grounder, string) {
+	model := r.models[provider]
+	if r.configured[provider] {
+		return model, r.grounders[provider], ""
+	}
+	switch provider {
+	case domain.ProviderGemini:
+		return model, nil, missingAPIKey
+	case domain.ProviderGPT:
+		return model, nil, missingOpenAIKey
+	case domain.ProviderKimi:
+		return model, nil, missingKimiKey
+	default:
+		return model, nil, "Provider is not configured"
+	}
 }
 
 func timeoutFromEnv() time.Duration {
@@ -93,10 +178,14 @@ func (r *Runner) Run(parent context.Context, id string, authorization domain.Run
 	if err != nil || run == nil || parent.Err() != nil {
 		return
 	}
-	if !r.configured {
-		r.fail(id, missingAPIKey, "configuration")
+	model, grounder, missing := r.configFor(run.Provider)
+	if missing != "" {
+		r.fail(id, missing, "configuration")
 		return
 	}
+	execution := *r
+	execution.model = model
+	execution.grounder = grounder
 	ctx, cancel := context.WithTimeout(parent, r.timeout)
 	defer cancel()
 	started, err := r.store.Transition(id, []domain.RunStatus{domain.RunStatusQueued}, domain.RunStatusRunning, domain.EventRunStarted, nil, nil, nil)
@@ -105,7 +194,7 @@ func (r *Runner) Run(parent context.Context, id string, authorization domain.Run
 	}
 	r.publishEvent(*started)
 
-	report, err := r.execute(ctx, id, run, authorization)
+	report, err := execution.execute(ctx, id, run, authorization)
 	if parent.Err() != nil { // The server owns cancellation and has already recorded it.
 		return
 	}
@@ -309,13 +398,19 @@ func publicError(err error) string {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "Run timed out"
 	}
-	var rate *gemini.RateLimitError
-	var httpError *gemini.HTTPError
+	var geminiRate *gemini.RateLimitError
+	var geminiHTTP *gemini.HTTPError
+	var openAIRate *openai.RateLimitError
+	var openAIHTTP *openai.HTTPError
 	switch {
-	case errors.As(err, &rate):
+	case errors.As(err, &geminiRate):
 		return "Gemini rate limit exceeded"
-	case errors.As(err, &httpError):
+	case errors.As(err, &geminiHTTP):
 		return "Gemini provider request failed"
+	case errors.As(err, &openAIRate):
+		return "OpenAI-compatible provider rate limit exceeded"
+	case errors.As(err, &openAIHTTP):
+		return "OpenAI-compatible provider request failed"
 	}
 	if strings.HasPrefix(err.Error(), "browser:") {
 		return "Browser operation failed"
@@ -323,14 +418,16 @@ func publicError(err error) string {
 	return "Pipeline execution failed"
 }
 func errorKind(err error) string {
-	var rate *gemini.RateLimitError
-	var httpError *gemini.HTTPError
+	var geminiRate *gemini.RateLimitError
+	var geminiHTTP *gemini.HTTPError
+	var openAIRate *openai.RateLimitError
+	var openAIHTTP *openai.HTTPError
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"
-	case errors.As(err, &rate):
+	case errors.As(err, &geminiRate), errors.As(err, &openAIRate):
 		return "rate_limit"
-	case errors.As(err, &httpError):
+	case errors.As(err, &geminiHTTP), errors.As(err, &openAIHTTP):
 		return "provider"
 	case strings.HasPrefix(err.Error(), "browser:"):
 		return "browser"

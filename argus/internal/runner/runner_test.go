@@ -197,6 +197,37 @@ func TestNewUsesDefaultModelWhenUnset(t *testing.T) {
 	}
 }
 
+func TestRunnerMapsPersistedProvidersAndReportsMissingConfiguration(t *testing.T) {
+	db, _ := newTestStore(t)
+	geminiProvider := &scriptedProvider{}
+	gptProvider := &scriptedProvider{}
+	runner := New(db, fakeFactory{}, Options{
+		Provider: geminiProvider, GPTProvider: gptProvider,
+		Model: "gemini-test", GPTModel: "gpt-vision-test",
+	})
+	model, _, missing := runner.configFor(domain.ProviderGPT)
+	if model != (agent.ModelRef{Provider: "gpt", Model: "gpt-vision-test"}) || missing != "" {
+		t.Fatalf("GPT config = %#v, %q", model, missing)
+	}
+	model, _, missing = runner.configFor(domain.ProviderKimi)
+	if model.Provider != "kimi" || missing != "KIMI_API_KEY is not configured" {
+		t.Fatalf("Kimi config = %#v, %q", model, missing)
+	}
+
+	run, err := db.CreateRunWithProvider("https://example.com", "check", domain.ProviderKimi, domain.RunPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AddEvent(run.ID, domain.EventRunQueued, nil); err != nil {
+		t.Fatal(err)
+	}
+	runner.Run(context.Background(), run.ID, domain.RunAuthorization{})
+	got, err := db.GetRun(run.ID, false)
+	if err != nil || got.Error == nil || *got.Error != "KIMI_API_KEY is not configured" {
+		t.Fatalf("missing Kimi config run = %#v, %v", got, err)
+	}
+}
+
 func newTestStore(t *testing.T) (*store.Store, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "argus.db")
@@ -572,7 +603,7 @@ func TestServerPostReachesTerminalReportWithFakePipeline(t *testing.T) {
 		response(`{"verdict":"failed","summary":"Search could not be verified","findings":[{"severity":"high","title":"Search unavailable","detail":"The requested search flow could not be completed."}],"recommendations":["Restore the search control"]}`),
 	}}
 	r := New(db, fakeFactory{session: &fakeSession{}}, Options{ScreenshotDir: t.TempDir(), Provider: provider})
-	handler, err := server.New(db, r, server.Options{})
+	handler, err := server.New(db, r, server.Options{GeminiConfigured: true})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -34,6 +34,8 @@ type Options struct {
 	StaticDir        string
 	ScreenshotDir    string
 	GeminiConfigured bool
+	OpenAIConfigured bool
+	KimiConfigured   bool
 	Model            string
 }
 
@@ -81,7 +83,18 @@ func New(runStore *store.Store, runner Runner, options Options) (*Server, error)
 	if !options.GeminiConfigured {
 		options.GeminiConfigured = os.Getenv("GEMINI_API_KEY") != ""
 	}
-	server := &Server{store: runStore, runner: runner, hub: newEventHub(), staticDir: options.StaticDir, screenshotDir: options.ScreenshotDir, settings: domain.SettingsResponse{GeminiConfigured: options.GeminiConfigured, Model: options.Model}, tasks: map[string]context.CancelFunc{}}
+	if !options.OpenAIConfigured {
+		options.OpenAIConfigured = os.Getenv("OPENAI_API_KEY") != ""
+	}
+	if !options.KimiConfigured {
+		options.KimiConfigured = os.Getenv("KIMI_API_KEY") != ""
+	}
+	providers := []domain.ProviderInfo{
+		{ID: domain.ProviderGemini, Available: options.GeminiConfigured, Default: true},
+		{ID: domain.ProviderGPT, Available: options.OpenAIConfigured},
+		{ID: domain.ProviderKimi, Available: options.KimiConfigured},
+	}
+	server := &Server{store: runStore, runner: runner, hub: newEventHub(), staticDir: options.StaticDir, screenshotDir: options.ScreenshotDir, settings: domain.SettingsResponse{GeminiConfigured: options.GeminiConfigured, Model: options.Model, Providers: providers}, tasks: map[string]context.CancelFunc{}}
 	events, err := runStore.ReconcileInterrupted()
 	if err != nil {
 		return nil, err
@@ -129,6 +142,10 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		writeValidation(w, validation)
 		return
 	}
+	if !s.providerAvailable(request.Provider) {
+		writeValidation(w, []validationError{{Loc: []any{"body", "provider"}, Type: "value_error", Msg: "Provider is not configured"}})
+		return
+	}
 	admission := s.admitRun()
 	if admission == nil {
 		writeError(w, http.StatusServiceUnavailable, "Server is shutting down")
@@ -150,7 +167,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		AllowDestructive: authorization.AllowDestructive,
 		AllowedOrigins:   append([]string(nil), authorization.AllowedOrigins...),
 	}
-	run, err := s.store.CreateRun(SanitizeURL(request.URL), request.Instructions, runPolicy)
+	run, err := s.store.CreateRunWithProvider(SanitizeURL(request.URL), request.Instructions, request.Provider, runPolicy)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Internal server error")
 		return
@@ -167,6 +184,15 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 	started = true
 	writeJSON(w, http.StatusCreated, run)
+}
+
+func (s *Server) providerAvailable(provider domain.ProviderID) bool {
+	for _, configured := range s.settings.Providers {
+		if configured.ID == provider {
+			return configured.Available
+		}
+	}
+	return false
 }
 
 func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
@@ -580,10 +606,21 @@ func decodeCreateRequest(body io.Reader) (domain.CreateRequest, []validationErro
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return domain.CreateRequest{}, []validationError{{Loc: []any{"body"}, Type: "json_invalid", Msg: "JSON decode error"}}
 	}
-	request := domain.CreateRequest{}
-	validation := make([]validationError, 0, 2)
+	request := domain.CreateRequest{Provider: domain.ProviderGemini}
+	validation := make([]validationError, 0, 3)
 	request.URL = requiredString(fields, "url", &validation)
 	request.Instructions = requiredString(fields, "instructions", &validation)
+	if raw, ok := fields["provider"]; ok && string(raw) != "null" {
+		var provider string
+		if err := json.Unmarshal(raw, &provider); err != nil {
+			validation = append(validation, validationError{Loc: []any{"body", "provider"}, Type: "string_type", Msg: "Input should be a valid string"})
+		} else {
+			request.Provider = domain.ProviderID(provider)
+			if !domain.ValidProvider(request.Provider) {
+				validation = append(validation, validationError{Loc: []any{"body", "provider"}, Type: "value_error", Msg: "Provider must be gemini, gpt, or kimi"})
+			}
+		}
+	}
 	if raw, ok := fields["authorization"]; ok && string(raw) != "null" {
 		var authorization domain.RunAuthorization
 		if err := json.Unmarshal(raw, &authorization); err != nil {

@@ -8,6 +8,18 @@ const (
 	RunEventsEndpoint = "/ws/runs/{run_id}"
 )
 
+type ProviderID string
+
+const (
+	ProviderGemini ProviderID = "gemini"
+	ProviderGPT    ProviderID = "gpt"
+	ProviderKimi   ProviderID = "kimi"
+)
+
+func ValidProvider(provider ProviderID) bool {
+	return provider == ProviderGemini || provider == ProviderGPT || provider == ProviderKimi
+}
+
 type RunStatus string
 
 const (
@@ -66,6 +78,7 @@ type Run struct {
 	ID           string     `json:"id"`
 	URL          string     `json:"url"`
 	Instructions string     `json:"instructions"`
+	Provider     ProviderID `json:"provider"`
 	Status       RunStatus  `json:"status"`
 	CreatedAt    string     `json:"created_at"`
 	UpdatedAt    string     `json:"updated_at"`
@@ -78,6 +91,7 @@ type Run struct {
 type CreateRequest struct {
 	URL           string            `json:"url"`
 	Instructions  string            `json:"instructions"`
+	Provider      ProviderID        `json:"provider,omitempty"`
 	Authorization *RunAuthorization `json:"authorization,omitempty"`
 }
 
@@ -97,7 +111,14 @@ type RunPolicy struct {
 	AllowedOrigins   []string `json:"allowed_origins"`
 }
 
+type ProviderInfo struct {
+	ID        ProviderID `json:"id"`
+	Available bool       `json:"available"`
+	Default   bool       `json:"default"`
+}
+
 type SettingsResponse struct {
-	GeminiConfigured bool   `json:"gemini_configured"`
-	Model            string `json:"model"`
+	GeminiConfigured bool           `json:"gemini_configured"`
+	Model            string         `json:"model"` // Legacy compatibility field; provider catalog never exposes models.
+	Providers        []ProviderInfo `json:"providers"`
 }

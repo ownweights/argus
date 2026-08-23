@@ -39,7 +39,7 @@ The Go agent exposes a semantic, reference-based browser surface:
 
 - inspection, navigation, clicking, typing, multi-field filling, form submission, and select controls
 - keyboard input, scrolling, viewport resizing, bounded waits, console errors, and network errors
-- full-page evidence screenshots and fresh viewport screenshots returned directly to Gemini
+- full-page evidence screenshots and fresh viewport screenshots returned directly to the selected model provider
 - visual `find_elements` and guarded `visual_click` grounding when Gemini is configured
 
 Model calls never receive arbitrary CSS-selector access. Each inspection creates run-local element references; stale references are rejected after navigation or a fresh inspection. Visual clicks resolve the real DOM element under Gemini's proposed coordinate and apply the same action policy before clicking.
@@ -77,11 +77,11 @@ Argus runs this like a person would — clicking through the flow, reading the p
 
 ## Run it yourself
 
-Argus is source-available and local-first — SQLite storage and no application telemetry. Browser observations and screenshots are sent to the configured Gemini API when needed for agent execution; run metadata and evidence remain in the local SQLite/data directory.
+Argus is source-available and local-first — SQLite storage and no application telemetry. Browser observations and screenshots are sent to the selected configured provider when needed for agent execution; run metadata and evidence remain in the local SQLite/data directory.
 
 ### Requirements
 
-- Go 1.25+, Node.js 20.19+ or 22.12+, and a [Gemini API key](https://aistudio.google.com/app/apikey) for real runs
+- Go 1.25+, Node.js 20.19+ or 22.12+, and a Gemini, OpenAI, or Kimi API key for real runs
 
 ### Run locally
 
@@ -101,6 +101,11 @@ Configuration is environment-only:
 | --- | --- | --- |
 | `GEMINI_API_KEY` | — | Required for real execution |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini REST model |
+| `OPENAI_API_KEY` | — | Enables the fixed GPT provider |
+| `OPENAI_MODEL` | `gpt-4o` | GPT vision model |
+| `KIMI_API_KEY` | — | Enables the fixed Kimi provider |
+| `KIMI_MODEL` | `moonshot-v1-8k-vision-preview` | Kimi vision model |
+| `KIMI_BASE_URL` | `https://api.moonshot.ai/v1` | Kimi OpenAI-compatible API base URL |
 | `ARGUS_RUN_TIMEOUT` | `300` | Run timeout in seconds |
 | `ARGUS_DB_PATH` | `data/argus.db` | SQLite file; screenshots are stored beside it |
 | `PORT` | `8000` | Go server port |
@@ -159,7 +164,7 @@ Argus accepts normal HTTP(S) targets, including trusted localhost and private-ne
 
 ```bash
 cp .env.example .env
-# Set GEMINI_API_KEY in .env
+# Set a provider API key in .env
 docker compose up --build
 ```
 

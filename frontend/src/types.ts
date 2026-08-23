@@ -22,6 +22,14 @@ export interface RunReport {
   recommendations: string[];
 }
 
+export type ProviderID = "gemini" | "gpt" | "kimi";
+
+export interface ProviderInfo {
+  id: ProviderID;
+  available: boolean;
+  default: boolean;
+}
+
 export interface RunAuthorization {
   allow_mutations?: boolean;
   allow_destructive?: boolean;
@@ -38,6 +46,7 @@ export interface RunPolicy {
 export interface CreateRunRequest {
   url: string;
   instructions: string;
+  provider?: ProviderID;
   authorization?: RunAuthorization;
 }
 
@@ -45,6 +54,7 @@ export interface Run {
   id: string;
   url: string;
   instructions: string;
+  provider: ProviderID;
   status: RunStatusValue;
   created_at: string;
   updated_at: string;
@@ -57,4 +67,5 @@ export interface Run {
 export interface Settings {
   gemini_configured: boolean;
   model: string;
+  providers: ProviderInfo[];
 }

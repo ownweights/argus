@@ -7,7 +7,7 @@ import (
 )
 
 func TestRunJSONContract(t *testing.T) {
-	fixture := []byte(`{"id":"run-123","url":"https://example.com","instructions":"Check navigation","status":"passed","created_at":"2025-01-02T03:04:05+00:00","updated_at":"2025-01-02T03:05:06+00:00","error":null,"report":{"verdict":"passed","summary":"Navigation works","plan":"Open the site","findings":[{"severity":"low","title":"Minor issue","detail":"Small visual mismatch"}],"recommendations":["Adjust spacing"]},"events":[{"id":7,"run_id":"run-123","type":"run.completed","data":{"verdict":"passed"},"created_at":"2025-01-02T03:05:06+00:00"}]}`)
+	fixture := []byte(`{"id":"run-123","url":"https://example.com","instructions":"Check navigation","provider":"gpt","status":"passed","created_at":"2025-01-02T03:04:05+00:00","updated_at":"2025-01-02T03:05:06+00:00","error":null,"report":{"verdict":"passed","summary":"Navigation works","plan":"Open the site","findings":[{"severity":"low","title":"Minor issue","detail":"Small visual mismatch"}],"recommendations":["Adjust spacing"]},"events":[{"id":7,"run_id":"run-123","type":"run.completed","data":{"verdict":"passed"},"created_at":"2025-01-02T03:05:06+00:00"}]}`)
 
 	var run Run
 	if err := json.Unmarshal(fixture, &run); err != nil {
@@ -26,6 +26,7 @@ func TestOptionalFieldsAreOmitted(t *testing.T) {
 		ID:           "run-123",
 		URL:          "https://example.com",
 		Instructions: "Check navigation",
+		Provider:     ProviderGemini,
 		Status:       RunStatusQueued,
 		CreatedAt:    "2025-01-02T03:04:05+00:00",
 		UpdatedAt:    "2025-01-02T03:04:05+00:00",
@@ -42,21 +43,21 @@ func TestOptionalFieldsAreOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONEqual(t, []byte(`{"id":"run-123","url":"https://example.com","instructions":"Check navigation","status":"queued","created_at":"2025-01-02T03:04:05+00:00","updated_at":"2025-01-02T03:04:05+00:00","error":null,"report":{"verdict":"inconclusive","summary":"Need more evidence","findings":[],"recommendations":[]}}`), encoded)
+	assertJSONEqual(t, []byte(`{"id":"run-123","url":"https://example.com","instructions":"Check navigation","provider":"gemini","status":"queued","created_at":"2025-01-02T03:04:05+00:00","updated_at":"2025-01-02T03:04:05+00:00","error":null,"report":{"verdict":"inconclusive","summary":"Need more evidence","findings":[],"recommendations":[]}}`), encoded)
 }
 
 func TestRequestAndSettingsJSONContracts(t *testing.T) {
-	request, err := json.Marshal(CreateRequest{URL: "https://example.com", Instructions: "Check navigation"})
+	request, err := json.Marshal(CreateRequest{URL: "https://example.com", Instructions: "Check navigation", Provider: ProviderKimi})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONEqual(t, []byte(`{"url":"https://example.com","instructions":"Check navigation"}`), request)
+	assertJSONEqual(t, []byte(`{"url":"https://example.com","instructions":"Check navigation","provider":"kimi"}`), request)
 
-	settings, err := json.Marshal(SettingsResponse{GeminiConfigured: true, Model: "gemini-2.5-flash"})
+	settings, err := json.Marshal(SettingsResponse{GeminiConfigured: true, Model: "gemini-2.5-flash", Providers: []ProviderInfo{{ID: ProviderGemini, Available: true, Default: true}, {ID: ProviderGPT, Available: false}, {ID: ProviderKimi, Available: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONEqual(t, []byte(`{"gemini_configured":true,"model":"gemini-2.5-flash"}`), settings)
+	assertJSONEqual(t, []byte(`{"gemini_configured":true,"model":"gemini-2.5-flash","providers":[{"id":"gemini","available":true,"default":true},{"id":"gpt","available":false,"default":false},{"id":"kimi","available":true,"default":false}]}`), settings)
 }
 
 func TestContractConstants(t *testing.T) {
