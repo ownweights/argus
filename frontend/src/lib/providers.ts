@@ -4,6 +4,7 @@ const defaults: ProviderInfo[] = [
   { id: "gemini", available: true, default: true },
   { id: "gpt", available: false, default: false },
   { id: "kimi", available: false, default: false },
+  { id: "glm", available: false, default: false },
 ];
 
 export function providerCatalog(providers?: ProviderInfo[]): ProviderInfo[] {
@@ -17,5 +18,5 @@ export function selectedProvider(provider: ProviderID, providers: ProviderInfo[]
 }
 
 export function providerLabel(provider: ProviderID = "gemini") {
-  return { gemini: "Gemini", gpt: "GPT", kimi: "Kimi" }[provider];
+  return { gemini: "Gemini", gpt: "GPT", kimi: "Kimi", glm: "GLM-5.3 Flash" }[provider];
 }

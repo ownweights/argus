@@ -213,6 +213,10 @@ func TestRunnerMapsPersistedProvidersAndReportsMissingConfiguration(t *testing.T
 	if model.Provider != "kimi" || missing != "KIMI_API_KEY is not configured" {
 		t.Fatalf("Kimi config = %#v, %q", model, missing)
 	}
+	model, _, missing = runner.configFor(domain.ProviderGLM)
+	if model != (agent.ModelRef{Provider: "glm", Model: "glm-5.3-flash"}) || missing != "ZAI_API_KEY is not configured" {
+		t.Fatalf("GLM config = %#v, %q", model, missing)
+	}
 
 	run, err := db.CreateRunWithProvider("https://example.com", "check", domain.ProviderKimi, domain.RunPolicy{})
 	if err != nil {

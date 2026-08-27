@@ -14,10 +14,11 @@ const (
 	ProviderGemini ProviderID = "gemini"
 	ProviderGPT    ProviderID = "gpt"
 	ProviderKimi   ProviderID = "kimi"
+	ProviderGLM    ProviderID = "glm"
 )
 
 func ValidProvider(provider ProviderID) bool {
-	return provider == ProviderGemini || provider == ProviderGPT || provider == ProviderKimi
+	return provider == ProviderGemini || provider == ProviderGPT || provider == ProviderKimi || provider == ProviderGLM
 }
 
 type RunStatus string

@@ -32,6 +32,7 @@ test("uses Gemini as the safe default when settings are unavailable", () => {
     { id: "gemini", available: true, default: true },
     { id: "gpt", available: false, default: false },
     { id: "kimi", available: false, default: false },
+    { id: "glm", available: false, default: false },
   ]);
 });
 
@@ -50,4 +51,5 @@ test("keeps only configured providers selectable and sends the selected availabl
 test("falls back to the Gemini label for runs created before provider support", () => {
   assert.equal(providerLabel(), "Gemini");
   assert.equal(providerLabel("kimi"), "Kimi");
+  assert.equal(providerLabel("glm"), "GLM-5.3 Flash");
 });

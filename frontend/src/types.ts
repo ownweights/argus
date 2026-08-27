@@ -22,7 +22,7 @@ export interface RunReport {
   recommendations: string[];
 }
 
-export type ProviderID = "gemini" | "gpt" | "kimi";
+export type ProviderID = "gemini" | "gpt" | "kimi" | "glm";
 
 export interface ProviderInfo {
   id: ProviderID;

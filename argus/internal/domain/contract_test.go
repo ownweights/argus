@@ -47,17 +47,17 @@ func TestOptionalFieldsAreOmitted(t *testing.T) {
 }
 
 func TestRequestAndSettingsJSONContracts(t *testing.T) {
-	request, err := json.Marshal(CreateRequest{URL: "https://example.com", Instructions: "Check navigation", Provider: ProviderKimi})
+	request, err := json.Marshal(CreateRequest{URL: "https://example.com", Instructions: "Check navigation", Provider: ProviderGLM})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONEqual(t, []byte(`{"url":"https://example.com","instructions":"Check navigation","provider":"kimi"}`), request)
+	assertJSONEqual(t, []byte(`{"url":"https://example.com","instructions":"Check navigation","provider":"glm"}`), request)
 
-	settings, err := json.Marshal(SettingsResponse{GeminiConfigured: true, Model: "gemini-2.5-flash", Providers: []ProviderInfo{{ID: ProviderGemini, Available: true, Default: true}, {ID: ProviderGPT, Available: false}, {ID: ProviderKimi, Available: true}}})
+	settings, err := json.Marshal(SettingsResponse{GeminiConfigured: true, Model: "gemini-2.5-flash", Providers: []ProviderInfo{{ID: ProviderGemini, Available: true, Default: true}, {ID: ProviderGPT, Available: false}, {ID: ProviderKimi, Available: true}, {ID: ProviderGLM, Available: false}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONEqual(t, []byte(`{"gemini_configured":true,"model":"gemini-2.5-flash","providers":[{"id":"gemini","available":true,"default":true},{"id":"gpt","available":false,"default":false},{"id":"kimi","available":true,"default":false}]}`), settings)
+	assertJSONEqual(t, []byte(`{"gemini_configured":true,"model":"gemini-2.5-flash","providers":[{"id":"gemini","available":true,"default":true},{"id":"gpt","available":false,"default":false},{"id":"kimi","available":true,"default":false},{"id":"glm","available":false,"default":false}]}`), settings)
 }
 
 func TestContractConstants(t *testing.T) {

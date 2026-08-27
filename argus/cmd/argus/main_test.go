@@ -32,12 +32,15 @@ func TestOptionsReadProviderConfiguration(t *testing.T) {
 	t.Setenv("KIMI_API_KEY", "kimi-key")
 	t.Setenv("KIMI_MODEL", "kimi-test")
 	t.Setenv("KIMI_BASE_URL", "https://kimi.example/v1")
+	t.Setenv("ZAI_API_KEY", "glm-key")
+	t.Setenv("GLM_MODEL", "glm-5.3-flash")
+	t.Setenv("ZAI_BASE_URL", "https://glm.example/v1")
 	serverOptions := optionsFromEnv()
-	if serverOptions.Model != "gemini-test" || !serverOptions.GeminiConfigured || !serverOptions.OpenAIConfigured || !serverOptions.KimiConfigured {
+	if serverOptions.Model != "gemini-test" || !serverOptions.GeminiConfigured || !serverOptions.OpenAIConfigured || !serverOptions.KimiConfigured || !serverOptions.GLMConfigured {
 		t.Fatalf("server options = %#v", serverOptions)
 	}
 	runnerOptions := runnerOptionsFromEnv("screenshots")
-	if runnerOptions.Model != "gemini-test" || runnerOptions.GPTModel != "gpt-test" || runnerOptions.KimiModel != "kimi-test" || runnerOptions.KimiBaseURL != "https://kimi.example/v1" {
+	if runnerOptions.Model != "gemini-test" || runnerOptions.GPTModel != "gpt-test" || runnerOptions.KimiModel != "kimi-test" || runnerOptions.KimiBaseURL != "https://kimi.example/v1" || runnerOptions.GLMModel != "glm-5.3-flash" || runnerOptions.GLMBaseURL != "https://glm.example/v1" {
 		t.Fatalf("runner options = %#v", runnerOptions)
 	}
 }

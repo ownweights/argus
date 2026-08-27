@@ -349,7 +349,7 @@ func TestCreateRunProviderSelectionAndSettingsCatalog(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	runner := &fakeRunner{started: make(chan startedRun, 10), cancelled: make(chan string, 10)}
-	server, err := New(db, runner, Options{GeminiConfigured: true, OpenAIConfigured: true})
+	server, err := New(db, runner, Options{GeminiConfigured: true, OpenAIConfigured: true, GLMConfigured: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,6 +363,7 @@ func TestCreateRunProviderSelectionAndSettingsCatalog(t *testing.T) {
 	}{
 		{`{"url":"https://example.com","instructions":"check"}`, domain.ProviderGemini},
 		{`{"url":"https://example.com","instructions":"check","provider":"gpt"}`, domain.ProviderGPT},
+		{`{"url":"https://example.com","instructions":"check","provider":"glm"}`, domain.ProviderGLM},
 	} {
 		response := request(t, httpServer.Client(), http.MethodPost, httpServer.URL+"/api/runs", test.payload)
 		if response.StatusCode != http.StatusCreated {
@@ -395,7 +396,7 @@ func TestCreateRunProviderSelectionAndSettingsCatalog(t *testing.T) {
 		}
 	}
 	runs, err := db.ListRuns(100)
-	if err != nil || len(runs) != 2 {
+	if err != nil || len(runs) != 3 {
 		t.Fatalf("runs after rejected providers = %#v, %v", runs, err)
 	}
 
@@ -406,6 +407,7 @@ func TestCreateRunProviderSelectionAndSettingsCatalog(t *testing.T) {
 		{ID: domain.ProviderGemini, Available: true, Default: true},
 		{ID: domain.ProviderGPT, Available: true},
 		{ID: domain.ProviderKimi, Available: false},
+		{ID: domain.ProviderGLM, Available: true},
 	}
 	if !reflect.DeepEqual(settings.Providers, want) {
 		t.Fatalf("providers = %#v, want %#v", settings.Providers, want)

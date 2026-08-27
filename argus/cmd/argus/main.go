@@ -90,6 +90,8 @@ func runnerOptionsFromEnv(screenshotDir string) runner.Options {
 		GPTModel:      os.Getenv("OPENAI_MODEL"),
 		KimiModel:     os.Getenv("KIMI_MODEL"),
 		KimiBaseURL:   os.Getenv("KIMI_BASE_URL"),
+		GLMModel:      os.Getenv("GLM_MODEL"),
+		GLMBaseURL:    os.Getenv("ZAI_BASE_URL"),
 	}
 }
 
@@ -109,6 +111,7 @@ func optionsFromEnv(screenshotDir ...string) server.Options {
 		GeminiConfigured: os.Getenv("GEMINI_API_KEY") != "",
 		OpenAIConfigured: os.Getenv("OPENAI_API_KEY") != "",
 		KimiConfigured:   os.Getenv("KIMI_API_KEY") != "",
+		GLMConfigured:    os.Getenv("ZAI_API_KEY") != "",
 	}
 }
 

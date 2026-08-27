@@ -106,6 +106,9 @@ Configuration is environment-only:
 | `KIMI_API_KEY` | — | Enables the fixed Kimi provider |
 | `KIMI_MODEL` | `moonshot-v1-8k-vision-preview` | Kimi vision model |
 | `KIMI_BASE_URL` | `https://api.moonshot.ai/v1` | Kimi OpenAI-compatible API base URL |
+| `ZAI_API_KEY` | — | Enables the fixed GLM-5.3 Flash provider |
+| `GLM_MODEL` | `glm-5.3-flash` | GLM model |
+| `ZAI_BASE_URL` | `https://api.z.ai/api/paas/v4` | Z.ai OpenAI-compatible API base URL |
 | `ARGUS_RUN_TIMEOUT` | `300` | Run timeout in seconds |
 | `ARGUS_DB_PATH` | `data/argus.db` | SQLite file; screenshots are stored beside it |
 | `PORT` | `8000` | Go server port |

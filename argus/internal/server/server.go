@@ -36,6 +36,7 @@ type Options struct {
 	GeminiConfigured bool
 	OpenAIConfigured bool
 	KimiConfigured   bool
+	GLMConfigured    bool
 	Model            string
 }
 
@@ -89,10 +90,14 @@ func New(runStore *store.Store, runner Runner, options Options) (*Server, error)
 	if !options.KimiConfigured {
 		options.KimiConfigured = os.Getenv("KIMI_API_KEY") != ""
 	}
+	if !options.GLMConfigured {
+		options.GLMConfigured = os.Getenv("ZAI_API_KEY") != ""
+	}
 	providers := []domain.ProviderInfo{
 		{ID: domain.ProviderGemini, Available: options.GeminiConfigured, Default: true},
 		{ID: domain.ProviderGPT, Available: options.OpenAIConfigured},
 		{ID: domain.ProviderKimi, Available: options.KimiConfigured},
+		{ID: domain.ProviderGLM, Available: options.GLMConfigured},
 	}
 	server := &Server{store: runStore, runner: runner, hub: newEventHub(), staticDir: options.StaticDir, screenshotDir: options.ScreenshotDir, settings: domain.SettingsResponse{GeminiConfigured: options.GeminiConfigured, Model: options.Model, Providers: providers}, tasks: map[string]context.CancelFunc{}}
 	events, err := runStore.ReconcileInterrupted()
@@ -617,7 +622,7 @@ func decodeCreateRequest(body io.Reader) (domain.CreateRequest, []validationErro
 		} else {
 			request.Provider = domain.ProviderID(provider)
 			if !domain.ValidProvider(request.Provider) {
-				validation = append(validation, validationError{Loc: []any{"body", "provider"}, Type: "value_error", Msg: "Provider must be gemini, gpt, or kimi"})
+				validation = append(validation, validationError{Loc: []any{"body", "provider"}, Type: "value_error", Msg: "Provider must be gemini, gpt, kimi, or glm"})
 			}
 		}
 	}

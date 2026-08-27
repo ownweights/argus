@@ -23,9 +23,12 @@ const (
 	missingAPIKey    = "GEMINI_API_KEY is not configured"
 	missingOpenAIKey = "OPENAI_API_KEY is not configured"
 	missingKimiKey   = "KIMI_API_KEY is not configured"
+	missingGLMKey    = "ZAI_API_KEY is not configured"
 	defaultGPTModel  = "gpt-4o"
 	defaultKimiModel = "moonshot-v1-8k-vision-preview"
 	defaultKimiURL   = "https://api.moonshot.ai/v1"
+	defaultGLMModel  = "glm-5.3-flash"
+	defaultGLMURL    = "https://api.z.ai/api/paas/v4"
 )
 
 type Publisher func(domain.RunEvent)
@@ -40,9 +43,13 @@ type Options struct {
 	KimiModel     string
 	KimiAPIKey    string
 	KimiBaseURL   string
+	GLMModel      string
+	GLMAPIKey     string
+	GLMBaseURL    string
 	Provider      agent.Provider // Provider makes deterministic Gemini tests possible.
 	GPTProvider   agent.Provider
 	KimiProvider  agent.Provider
+	GLMProvider   agent.Provider
 	Grounder      Grounder
 }
 
@@ -79,6 +86,12 @@ func New(runStore *store.Store, factory browser.Factory, options Options) *Runne
 	if options.KimiBaseURL == "" {
 		options.KimiBaseURL = defaultKimiURL
 	}
+	if options.GLMModel == "" {
+		options.GLMModel = defaultGLMModel
+	}
+	if options.GLMBaseURL == "" {
+		options.GLMBaseURL = defaultGLMURL
+	}
 	if options.APIKey == "" {
 		options.APIKey = os.Getenv("GEMINI_API_KEY")
 	}
@@ -88,8 +101,14 @@ func New(runStore *store.Store, factory browser.Factory, options Options) *Runne
 	if options.KimiAPIKey == "" {
 		options.KimiAPIKey = os.Getenv("KIMI_API_KEY")
 	}
+	if options.GLMAPIKey == "" {
+		options.GLMAPIKey = os.Getenv("ZAI_API_KEY")
+	}
 	if baseURL := os.Getenv("KIMI_BASE_URL"); options.KimiBaseURL == defaultKimiURL && baseURL != "" {
 		options.KimiBaseURL = baseURL
+	}
+	if baseURL := os.Getenv("ZAI_BASE_URL"); options.GLMBaseURL == defaultGLMURL && baseURL != "" {
+		options.GLMBaseURL = baseURL
 	}
 
 	geminiProvider := options.Provider
@@ -104,12 +123,16 @@ func New(runStore *store.Store, factory browser.Factory, options Options) *Runne
 	if kimiProvider == nil && options.KimiAPIKey != "" {
 		kimiProvider = openai.New(options.KimiAPIKey, openai.WithBaseURL(options.KimiBaseURL))
 	}
+	glmProvider := options.GLMProvider
+	if glmProvider == nil && options.GLMAPIKey != "" {
+		glmProvider = openai.New(options.GLMAPIKey, openai.WithBaseURL(options.GLMBaseURL))
+	}
 	providers := map[string]agent.Provider{}
 	configured := map[domain.ProviderID]bool{}
 	for _, provider := range []struct {
 		id       domain.ProviderID
 		provider agent.Provider
-	}{{domain.ProviderGemini, geminiProvider}, {domain.ProviderGPT, gptProvider}, {domain.ProviderKimi, kimiProvider}} {
+	}{{domain.ProviderGemini, geminiProvider}, {domain.ProviderGPT, gptProvider}, {domain.ProviderKimi, kimiProvider}, {domain.ProviderGLM, glmProvider}} {
 		if provider.provider != nil {
 			providers[string(provider.id)] = provider.provider
 			configured[provider.id] = true
@@ -138,6 +161,7 @@ func New(runStore *store.Store, factory browser.Factory, options Options) *Runne
 			domain.ProviderGemini: {Provider: string(domain.ProviderGemini), Model: options.Model},
 			domain.ProviderGPT:    {Provider: string(domain.ProviderGPT), Model: options.GPTModel},
 			domain.ProviderKimi:   {Provider: string(domain.ProviderKimi), Model: options.KimiModel},
+			domain.ProviderGLM:    {Provider: string(domain.ProviderGLM), Model: options.GLMModel},
 		},
 		runtime: runtime, grounder: grounder, grounders: grounders, configured: configured,
 	}
@@ -155,6 +179,8 @@ func (r *Runner) configFor(provider domain.ProviderID) (agent.ModelRef, Grounder
 		return model, nil, missingOpenAIKey
 	case domain.ProviderKimi:
 		return model, nil, missingKimiKey
+	case domain.ProviderGLM:
+		return model, nil, missingGLMKey
 	default:
 		return model, nil, "Provider is not configured"
 	}
