@@ -234,6 +234,7 @@ func TestRunnerMapsPersistedProvidersAndReportsMissingConfiguration(t *testing.T
 
 func newTestStore(t *testing.T) (*store.Store, string) {
 	t.Helper()
+	t.Setenv("TYPESAFE_API_KEY", "")
 	path := filepath.Join(t.TempDir(), "argus.db")
 	db, err := store.Open(path)
 	if err != nil {

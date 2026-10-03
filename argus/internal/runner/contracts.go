@@ -104,6 +104,21 @@ type TestCase struct {
 	Name    string   `json:"name"`
 	Steps   []string `json:"steps"`
 	Success string   `json:"success"`
+	DOM     *DOMPlan `json:"dom,omitempty"`
+}
+
+type DOMPlan struct {
+	Actions    []DOMAction `json:"actions"`
+	Assertions []string    `json:"assertions"`
+}
+
+type DOMAction struct {
+	Tool   string  `json:"tool"`
+	Target string  `json:"target,omitempty"`
+	Text   *string `json:"text,omitempty"`
+	Secret string  `json:"secret,omitempty"`
+	Value  string  `json:"value,omitempty"`
+	URL    string  `json:"url,omitempty"`
 }
 
 type TestPlan struct {
@@ -206,6 +221,11 @@ func validateTestPlan(value TestPlan) error {
 		seen[test.ID] = struct{}{}
 		if err := validateStrings(test.Steps, 1_000); err != nil {
 			return err
+		}
+		if test.DOM != nil {
+			if err := validateDOMPlan(*test.DOM); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

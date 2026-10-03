@@ -3,6 +3,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/ace-foundry/argus-testing/argus/internal/browser"
 	"github.com/ace-foundry/argus-testing/argus/internal/domain"
 	"github.com/ace-foundry/argus-testing/argus/internal/gemini"
+	"github.com/ace-foundry/argus-testing/argus/internal/jev"
 	"github.com/ace-foundry/argus-testing/argus/internal/openai"
 	"github.com/ace-foundry/argus-testing/argus/internal/policy"
 	"github.com/ace-foundry/argus-testing/argus/internal/store"
@@ -51,6 +53,9 @@ type Options struct {
 	KimiProvider  agent.Provider
 	GLMProvider   agent.Provider
 	Grounder      Grounder
+	Jev           *jev.Client
+	JevAPIKey     string
+	JevModel      string
 }
 
 type Runner struct {
@@ -65,6 +70,8 @@ type Runner struct {
 	grounders     map[domain.ProviderID]Grounder
 	configured    map[domain.ProviderID]bool
 	publish       Publisher
+	jev           *jev.Client
+	jevCalls      int
 }
 
 func New(runStore *store.Store, factory browser.Factory, options Options) *Runner {
@@ -109,6 +116,21 @@ func New(runStore *store.Store, factory browser.Factory, options Options) *Runne
 	}
 	if baseURL := os.Getenv("ZAI_BASE_URL"); options.GLMBaseURL == defaultGLMURL && baseURL != "" {
 		options.GLMBaseURL = baseURL
+	}
+
+	if options.JevAPIKey == "" {
+		options.JevAPIKey = os.Getenv("TYPESAFE_API_KEY")
+	}
+	if options.JevModel == "" {
+		options.JevModel = os.Getenv("JEV_MODEL")
+	}
+	jevClient := options.Jev
+	if jevClient == nil && options.JevAPIKey != "" {
+		var optionsForJev []jev.Option
+		if options.JevModel != "" {
+			optionsForJev = append(optionsForJev, jev.WithModel(options.JevModel))
+		}
+		jevClient = jev.New(options.JevAPIKey, optionsForJev...)
 	}
 
 	geminiProvider := options.Provider
@@ -163,7 +185,7 @@ func New(runStore *store.Store, factory browser.Factory, options Options) *Runne
 			domain.ProviderKimi:   {Provider: string(domain.ProviderKimi), Model: options.KimiModel},
 			domain.ProviderGLM:    {Provider: string(domain.ProviderGLM), Model: options.GLMModel},
 		},
-		runtime: runtime, grounder: grounder, grounders: grounders, configured: configured,
+		runtime: runtime, grounder: grounder, grounders: grounders, configured: configured, jev: jevClient,
 	}
 }
 
@@ -260,12 +282,15 @@ func (r *Runner) execute(ctx context.Context, id string, run *domain.Run, author
 		return nil, err
 	}
 	defer secrets.Close()
+	safeRun := *run
+	safeRun.Instructions = secrets.Redact(run.Instructions)
+	run = &safeRun
 
-	validator, err := r.complete(ctx, spec("validator", validatorInstruction, r.model, nil, true), id+":validator", runMessage(run))
+	testable, reason, err := r.validateRequest(ctx, id, run, secrets)
 	if err != nil {
 		return nil, err
 	}
-	if testable, reason := parseValidator(validator); !testable {
+	if !testable {
 		return normalizedReport("", "Validation failed — request is not testable", "", reason), nil
 	}
 	var briefContract TestBrief
@@ -308,10 +333,18 @@ func (r *Runner) execute(ctx context.Context, id string, run *domain.Run, author
 	if err != nil {
 		return nil, err
 	}
+	secretContext := fmt.Sprintf("\nRun policy: allow_mutations=%t, allow_destructive=%t", effectiveAuthorization.AllowMutations, effectiveAuthorization.AllowDestructive)
+	if names := secrets.Names(); len(names) > 0 {
+		secretContext += "\nAvailable secret bindings (names only): " + strings.Join(names, ", ")
+	}
+	planningInstruction := strategistInstruction
+	if r.jev != nil {
+		planningInstruction += "\n" + domPlanInstruction
+	}
 	var planContract TestPlan
 	plan, err := r.completeContract(
-		ctx, spec("strategist", strategistInstruction, r.model, nil, true),
-		id+":strategist", textMessage("Target: "+run.URL+"\nGoal: "+run.Instructions+"\nTest Brief:\n"+brief+"\nApp Map:\n"+explorer),
+		ctx, spec("strategist", planningInstruction, r.model, nil, true),
+		id+":strategist", textMessage("Target: "+run.URL+"\nGoal: "+run.Instructions+"\nTest Brief:\n"+brief+"\nApp Map:\n"+explorer+secretContext),
 		"", &planContract, nil,
 	)
 	if err != nil {
@@ -324,19 +357,12 @@ func (r *Runner) execute(ctx context.Context, id string, run *domain.Run, author
 	if err != nil {
 		return nil, err
 	}
-	secretBindings := secrets.Names()
-	secretContext := ""
-	if len(secretBindings) > 0 {
-		secretContext = "\nAvailable secret bindings (names only): " + strings.Join(secretBindings, ", ")
+	executionContract, err := r.executePlan(ctx, adapter, run, planContract, explorer, secretContext, preExecution.data)
+	var execution string
+	if err == nil {
+		encoded, encodeErr := json.Marshal(executionContract)
+		execution, err = string(encoded), encodeErr
 	}
-	var executionContract ExecutionResult
-	execution, err := r.completeContract(
-		ctx, spec("executor", executorInstruction, r.model, browserTools(adapter, true), true),
-		id+":executor", imageMessage("Target: "+run.URL+"\nGoal: "+run.Instructions+"\nPlan:\n"+plan+"\nApp Map:\n"+explorer+secretContext, preExecution.data),
-		id, &executionContract, func() error {
-			return validateExecutionAgainstPlan(planContract, executionContract)
-		},
-	)
 	if err != nil {
 		return nil, err
 	}

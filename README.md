@@ -109,10 +109,14 @@ Configuration is environment-only:
 | `ZAI_API_KEY` | — | Enables the fixed GLM-5.3 Flash provider |
 | `GLM_MODEL` | `glm-5.3-flash` | GLM model |
 | `ZAI_BASE_URL` | `https://api.z.ai/api/paas/v4` | Z.ai OpenAI-compatible API base URL |
+| `TYPESAFE_API_KEY` | — | Enables Jev request validation, DOM target selection, and DOM assertions with LLM fallback |
+| `JEV_MODEL` | `jev-latest` | TypeSafe decision model |
 | `ARGUS_RUN_TIMEOUT` | `300` | Run timeout in seconds |
 | `ARGUS_DB_PATH` | `data/argus.db` | SQLite file; screenshots are stored beside it |
 | `PORT` | `8000` | Go server port |
 | `ARGUS_BASE_URL` | `http://127.0.0.1:8000` | Running local Argus REST server used by the MCP adapter |
+
+When `TYPESAFE_API_KEY` is set, the planner can emit structured DOM actions for suitable cases. Jev selects fresh element references and checks DOM/text outcomes; Go executes actions through the existing policy guards. Decisions below 0.9 confidence, ambiguous results, unsupported cases, or API errors fall back to the selected LLM. Jev calls have a 3-second timeout and a 64-call run budget; an API error disables Jev for the rest of that run. Completed actions are excluded from the fallback plan, and verification-only fallback cannot replay actions. Browser-action errors stop the run rather than retrying a potentially completed mutation. Vision, planning, the independent Critic, and persisted screenshot requirements remain unchanged. The confidence threshold is an initial gate, not a measured accuracy guarantee.
 
 ### Run authorization and secret bindings
 
@@ -180,7 +184,7 @@ cd argus && go test -race ./... && go vet ./...
 cd ../frontend && npm ci && npm test && npm run typecheck && npm run lint && npm run build
 ```
 
-The default Go suite is offline and uses deterministic provider doubles. After `go run ./cmd/argus install-browser`, set `ARGUS_PLAYWRIGHT_SMOKE=1` to include the real Chromium fixture and full runner integration:
+The default Go suite is offline and uses deterministic provider doubles. To exercise the Jev integration against the live API, export `TYPESAFE_API_KEY` and run `ARGUS_PLAYWRIGHT_SMOKE=1 ARGUS_JEV_LIVE=1 go test ./internal/runner -run TestIntegrationJevUsesRealPlaywright -v` from `argus/`. This makes paid Jev calls with synthetic fixture data; the LLM stages remain stubbed. After `go run ./cmd/argus install-browser`, set `ARGUS_PLAYWRIGHT_SMOKE=1` to include the real Chromium fixture and full runner integration:
 
 ```bash
 cd argus

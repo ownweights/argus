@@ -7,13 +7,88 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ace-foundry/argus-testing/argus/internal/agent"
 	"github.com/ace-foundry/argus-testing/argus/internal/browser"
 	"github.com/ace-foundry/argus-testing/argus/internal/domain"
+	"github.com/ace-foundry/argus-testing/argus/internal/jev"
 )
+
+type stageProvider struct {
+	responses map[string]agent.ModelResponse
+	requests  []agent.ModelRequest
+}
+
+func (p *stageProvider) Stream(_ context.Context, request agent.ModelRequest, emit func(agent.ModelEvent) error) error {
+	p.requests = append(p.requests, request)
+	response, ok := p.responses[request.SystemInstruction]
+	if !ok {
+		return fmt.Errorf("unexpected stubbed model stage")
+	}
+	return emit(response)
+}
+
+func TestIntegrationJevUsesRealPlaywright(t *testing.T) {
+	if os.Getenv("ARGUS_PLAYWRIGHT_SMOKE") != "1" {
+		t.Skip("set ARGUS_PLAYWRIGHT_SMOKE=1 after installing Chromium")
+	}
+	fixture, err := os.ReadFile(filepath.Join("..", "browser", "testdata", "fixture.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(fixture) }))
+	defer app.Close()
+	client, requests := testJev(t, jevReply{"testable", .99, 0}, jevReply{"e1-2", .99, 0}, jevReply{"e3-4", .99, 0}, jevReply{"satisfied", .99, 0})
+	live := os.Getenv("ARGUS_JEV_LIVE") == "1"
+	if live {
+		if os.Getenv("TYPESAFE_API_KEY") == "" {
+			t.Fatal("ARGUS_JEV_LIVE requires TYPESAFE_API_KEY")
+		}
+		client = jev.New(os.Getenv("TYPESAFE_API_KEY"))
+	}
+	provider := &stageProvider{responses: map[string]agent.ModelResponse{
+		comprehenderInstruction:                           response(`{"objective":"Verify search","features":["Search"],"constraints":["Read-only"]}`),
+		explorerInstruction:                               response(`{"pages":[{"url":"https://example.com","name":"Example","features":["Search"]}]}`),
+		strategistInstruction + "\n" + domPlanInstruction: response(domSearchPlan),
+		executorInstruction:                               response(`{"cases":[{"id":"T1","status":"inconclusive","steps":[],"findings":[],"evidence":[]}],"summary":"Needs independent review"}`),
+		criticInstruction:                                 response(`{"verdict":"passed","summary":"Search reviewed","findings":[],"recommendations":[]}`),
+	}}
+	db, _ := newTestStore(t)
+	run, err := db.CreateRun(app.URL, "Search for Acme and verify Acme appears in the result", domain.RunPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := New(db, browser.NewPlaywrightFactory(), Options{Provider: provider, Jev: client, ScreenshotDir: t.TempDir(), Timeout: 30 * time.Second})
+	r.Run(context.Background(), run.ID, domain.RunAuthorization{})
+	current, err := db.GetRun(run.ID, true)
+	if err != nil || current.Report == nil || current.Report.Verdict == domain.ReportVerdictFailed {
+		t.Fatalf("run = %#v, %v", current, err)
+	}
+	if !live && (current.Report.Verdict != domain.ReportVerdictPassed || len(provider.requests) != 4) {
+		t.Fatalf("expected a passing run with comprehender, explorer, strategist and critic only; got %d calls", len(provider.requests))
+	}
+	if !live && !strings.Contains(strings.Join(*requests, ""), "Acme — All") {
+		t.Fatal("Jev did not receive the actual browser result")
+	}
+	var assertions, actions int
+	for _, event := range current.Events {
+		if event.Type == domain.EventBrowserObservation && event.Data["tool"] == "jev_assertion" {
+			assertions++
+			if live {
+				t.Logf("Live assertion: %v; model calls: %d; verdict: %s", event.Data["result"], len(provider.requests), current.Report.Verdict)
+			}
+		}
+		if event.Type == domain.EventBrowserAction {
+			actions++
+		}
+	}
+	if assertions != 1 || actions != 2 {
+		t.Fatalf("assertion decisions/actions = %d/%d", assertions, actions)
+	}
+}
 
 func TestIntegrationFullRunnerUsesRealPlaywrightAndEvidence(t *testing.T) {
 	if os.Getenv("ARGUS_PLAYWRIGHT_SMOKE") != "1" {
