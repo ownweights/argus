@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -253,6 +254,7 @@ func (r *Runner) Run(parent context.Context, id string, authorization domain.Run
 		return
 	}
 	if err != nil {
+		log.Printf("run %s failed (%s): %s", id, errorKind(err), errorDetail(err))
 		r.fail(id, publicError(err), errorKind(err))
 		return
 	}
@@ -469,6 +471,45 @@ func publicError(err error) string {
 	}
 	return "Pipeline execution failed"
 }
+
+// maxLoggedBody bounds how much of a provider response body reaches the server log.
+const maxLoggedBody = 2048
+
+// errorDetail renders the full error chain plus any provider status and
+// response body for the server log. publicError stays generic for clients.
+func errorDetail(err error) string {
+	var geminiRate *gemini.RateLimitError
+	var geminiHTTP *gemini.HTTPError
+	var openAIRate *openai.RateLimitError
+	var openAIHTTP *openai.HTTPError
+	var status int
+	var retryAfter time.Duration
+	var body string
+	switch {
+	case errors.As(err, &geminiRate):
+		status, retryAfter, body = geminiRate.StatusCode, geminiRate.RetryAfter, geminiRate.Body
+	case errors.As(err, &geminiHTTP):
+		status, body = geminiHTTP.StatusCode, geminiHTTP.Body
+	case errors.As(err, &openAIRate):
+		status, retryAfter, body = openAIRate.StatusCode, openAIRate.RetryAfter, openAIRate.Body
+	case errors.As(err, &openAIHTTP):
+		status, body = openAIHTTP.StatusCode, openAIHTTP.Body
+	default:
+		return err.Error()
+	}
+	detail := fmt.Sprintf("%s; status=%d", err.Error(), status)
+	if retryAfter > 0 {
+		detail += fmt.Sprintf(" retry_after=%s", retryAfter)
+	}
+	if body = strings.Join(strings.Fields(body), " "); body != "" {
+		if len(body) > maxLoggedBody {
+			body = body[:maxLoggedBody] + "…(truncated)"
+		}
+		detail += " body=" + body
+	}
+	return detail
+}
+
 func errorKind(err error) string {
 	var geminiRate *gemini.RateLimitError
 	var geminiHTTP *gemini.HTTPError
