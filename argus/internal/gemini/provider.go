@@ -44,6 +44,7 @@ type VisualMatch struct {
 type RateLimitError struct {
 	StatusCode int
 	RetryAfter time.Duration
+	Body       string
 }
 
 func (e *RateLimitError) Error() string {
@@ -178,7 +179,8 @@ func (p *Provider) Stream(ctx context.Context, request agent.ModelRequest, emit 
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusTooManyRequests {
-		return &RateLimitError{StatusCode: response.StatusCode, RetryAfter: retryAfter(response.Header.Get("Retry-After"), time.Now())}
+		limitedBody, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
+		return &RateLimitError{StatusCode: response.StatusCode, RetryAfter: retryAfter(response.Header.Get("Retry-After"), time.Now()), Body: string(limitedBody)}
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		limitedBody, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
